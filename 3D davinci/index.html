@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>DaVinci 3D MR Viewer</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+</head>
+<body style="margin: 0; overflow: hidden;">
+    <video id="videoSource" autoplay playsinline style="display:none"></video>
+
+    <a-scene xr-mode-ui="enabled: true" device-orientation-permission-ui="enabled: false">
+        <a-sky color="#000000" material="transparent: true; opacity: 0"></a-sky>
+        
+        <a-video id="leftEyeView" 
+                 src="#videoSource" 
+                 width="1.6" height="0.9" 
+                 position="-0.01 1.5 -1" 
+                 clip="0 0 0.5 1"> </a-video>
+
+        <a-video id="rightEyeView" 
+                 src="#videoSource" 
+                 width="1.6" height="0.9" 
+                 position="0.01 1.5 -1" 
+                 clip="0.5 0 1 1"> </a-video>
+
+        <a-entity laser-controls="hand: right"></a-entity>
+    </a-scene>
+
+    <script>
+        // カメラ（キャプチャボード）の起動
+        async function startCamera() {
+            const video = document.getElementById('videoSource');
+            try {
+                // 解像度はダビンチの出力に合わせて調整（例: 1920x1080）
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 1920, height: 1080 } 
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("Error accessing camera: ", err);
+                alert("キャプチャデバイスが見つかりません。USB接続を確認してください。");
+            }
+        }
+
+        // WebXR（MRモード）の起動ボタンを自動クリック、またはユーザー操作で起動
+        document.addEventListener('click', function() {
+            startCamera();
+        });
+
+        // A-Frameのカスタムコンポーネント: 左右の目に別々の映像を見せる
+        AFRAME.registerComponent('clip', {
+          schema: { type: 'vec4' }, // x, y, width, height
+          init: function () {
+            this.el.addEventListener('model-loaded', () => {
+              const mesh = this.el.getObject3D('mesh');
+              mesh.material.map.repeat.set(this.data.z - this.data.x, 1);
+              mesh.material.map.offset.set(this.data.x, 0);
+            });
+          }
+        });
+    </script>
+</body>
+</html>
