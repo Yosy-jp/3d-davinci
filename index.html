@@ -1,90 +1,122 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>DaVinci 3D MR - Hybrid Control</title>
-<script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
+    <meta charset="utf-8">
+    <title>DaVinci 3D MR - Pro Edition</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
 </head>
 <body style="margin: 0; overflow: hidden;">
-<video id="videoSource" autoplay playsinline style="display:none"></video>
+    <video id="videoSource" autoplay playsinline style="display:none"></video>
 
-<a-scene xr-mode-ui="enabled: true" webxr="optionalFeatures: passthrough, periods-of-track-hand; referenceSpaceType: local">
-<a-sky color="#000000" material="transparent: true; opacity: 0"></a-sky>
+    <a-scene xr-mode-ui="enabled: true" webxr="optionalFeatures: passthrough, periods-of-track-hand; referenceSpaceType: local">
+        <a-sky color="#000000" material="transparent: true; opacity: 0"></a-sky>
+        
+        <a-entity id="monitor-group" position="0 1.5 -1.0" class="clickable" grabbable-scalable>
+            <a-video src="#videoSource" width="1.6" height="0.9" position="-0.005 0 0" clip="0 0 0.5 1"></a-video>
+            <a-video src="#videoSource" width="1.6" height="0.9" position="0.005 0 0" clip="0.5 0 1 1"></a-video>
+            
+            <a-box width="1.7" height="1.0" depth="0.1" material="color: #ffffff; opacity: 0.1; transparent: true" class="raycast-target"></a-box>
+        </a-entity>
 
-<a-entity id="monitor-group" position="0 1.5 -1.0" class="clickable" grabbable-scalable>
-<a-video src="#videoSource" width="1.6" height="0.9" position="-0.01 0 0" clip="0 0 0.5 1"></a-video>
-<a-video src="#videoSource" width="1.6" height="0.9" position="0.01 0 0" clip="0.5 0 1 1"></a-video>
+        <a-entity hand-tracking-controls="hand: left"></a-entity>
+        <a-entity hand-tracking-controls="hand: right"></a-entity>
+        <a-entity oculus-touch-controls="hand: left"></a-entity>
+        <a-entity oculus-touch-controls="hand: right" laser-controls="hand: right" raycaster="objects: .raycast-target"></a-entity>
+    </a-scene>
 
-<a-box width="1.7" height="1.0" depth="0.1" material="color: #ffffff; opacity: 0.1; transparent: true" class="raycast-target"></a-box>
-</a-entity>
+    <script>
+        // 【重要】USBキャプチャデバイスを特定して起動する関数
+        async function startCamera() {
+            const video = document.getElementById('videoSource');
+            try {
+                // デバイス一覧を取得
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                
+                let selectedDeviceId = null;
 
-<a-entity hand-tracking-controls="hand: left"></a-entity>
-<a-entity hand-tracking-controls="hand: right"></a-entity>
+                // "USB Video" や "UVC" という名前のデバイスを優先的に探す
+                for (const device of videoDevices) {
+                    console.log("Found device:", device.label);
+                    if (device.label.toLowerCase().includes('usb') || 
+                        device.label.toLowerCase().includes('video') || 
+                        device.label.toLowerCase().includes('uvc')) {
+                        selectedDeviceId = device.deviceId;
+                        break;
+                    }
+                }
 
-<a-entity oculus-touch-controls="hand: left"></a-entity>
-<a-entity oculus-touch-controls="hand: right" laser-controls="hand: right" raycaster="objects: .raycast-target"></a-entity>
+                // 見つからない場合は最後のデバイス（外付けの可能性が高い）を使用
+                if (!selectedDeviceId && videoDevices.length > 0) {
+                    selectedDeviceId = videoDevices[videoDevices.length - 1].deviceId;
+                }
 
-</a-scene>
+                const constraints = {
+                    video: {
+                        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 60 }
+                    }
+                };
 
-<script>
-// カメラ起動
-async function startCamera() {
-const video = document.getElementById('videoSource');
-try {
-const stream = await navigator.mediaDevices.getUserMedia({
-video: { width: { ideal: 1920 }, height: { ideal: 1080 } }
-});
-video.srcObject = stream;
-} catch (err) { console.error("Camera error:", err); }
-}
-document.addEventListener('click', startCamera);
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                console.log("Camera started successfully");
+            } catch (err) {
+                console.error("Camera access denied or failed:", err);
+                alert("カメラの起動に失敗しました。設定でカメラ権限を許可してください。");
+            }
+        }
 
-// 左右映像切り分け
-AFRAME.registerComponent('clip', {
-schema: { type: 'vec4' },
-init: function () {
-this.el.addEventListener('materialtexturedrawn', () => {
-const mesh = this.el.getObject3D('mesh');
-if (mesh && mesh.material.map) {
-mesh.material.map.repeat.set(this.data.z - this.data.x, 1);
-mesh.material.map.offset.set(this.data.x, 0);
-}
-});
-}
-});
+        // 最初のクリックで映像開始
+        document.addEventListener('click', startCamera, { once: true });
 
-// ハイブリッド操作ロジック
-AFRAME.registerComponent('grabbable-scalable', {
-init: function () {
-this.scale = 1.0;
-this.el.addEventListener('mousedown', (e) => {
-this.isGrabbing = true;
-this.activeInput = e.detail.cursorEl;
-});
-window.addEventListener('mouseup', () => { this.isGrabbing = false; });
+        // 映像の左右切り分けコンポーネント
+        AFRAME.registerComponent('clip', {
+          schema: { type: 'vec4' },
+          init: function () {
+            this.el.addEventListener('materialtexturedrawn', () => {
+              const mesh = this.el.getObject3D('mesh');
+              if (mesh && mesh.material.map) {
+                mesh.material.map.repeat.set(this.data.z - this.data.x, 1);
+                mesh.material.map.offset.set(this.data.x, 0);
+              }
+            });
+          }
+        });
 
-// コントローラのスティックによる拡大縮小
-window.addEventListener('axismove', (e) => {
-const stickY = e.detail.axis[3] || e.detail.axis[1];
-if (Math.abs(stickY) > 0.1) {
-this.scale -= stickY * 0.03;
-this.scale = Math.max(0.3, Math.min(4, this.scale));
-this.el.setAttribute('scale', `${this.scale} ${this.scale} ${this.scale}`);
-}
-});
-},
-tick: function () {
-if (this.isGrabbing && this.activeInput) {
-const targetObj = this.activeInput.object3D;
-// 手またはコントローラの少し前方（40cm）に位置を合わせる
-const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(targetObj.quaternion);
-const newPos = targetObj.position.clone().add(direction.multiplyScalar(0.4));
-this.el.object3D.position.lerp(newPos, 0.1);
-this.el.object3D.quaternion.slerp(targetObj.quaternion, 0.1);
-}
-}
-});
-</script>
+        // ハイブリッド操作ロジック (掴む・拡大)
+        AFRAME.registerComponent('grabbable-scalable', {
+          init: function () {
+            this.scale = 1.0;
+            this.el.addEventListener('mousedown', (e) => {
+              this.isGrabbing = true;
+              this.activeInput = e.detail.cursorEl;
+            });
+            window.addEventListener('mouseup', () => { this.isGrabbing = false; });
+
+            // コントローラーのスティック上下で拡大縮小
+            window.addEventListener('axismove', (e) => {
+              const stickY = e.detail.axis[3] || e.detail.axis[1];
+              if (Math.abs(stickY) > 0.1) {
+                this.scale -= stickY * 0.03;
+                this.scale = Math.max(0.3, Math.min(4, this.scale));
+                this.el.setAttribute('scale', `${this.scale} ${this.scale} ${this.scale}`);
+              }
+            });
+          },
+          tick: function () {
+            if (this.isGrabbing && this.activeInput) {
+              const targetObj = this.activeInput.object3D;
+              const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(targetObj.quaternion);
+              const newPos = targetObj.position.clone().add(direction.multiplyScalar(0.5));
+              this.el.object3D.position.lerp(newPos, 0.1);
+              this.el.object3D.quaternion.slerp(targetObj.quaternion, 0.1);
+            }
+          }
+        });
+    </script>
 </body>
 </html>
