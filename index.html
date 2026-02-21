@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>DaVinci 3D MR - Hand Tracking</title>
+<title>DaVinci 3D MR - Hybrid Control</title>
 <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
 </head>
@@ -12,18 +12,23 @@
 <a-scene xr-mode-ui="enabled: true" webxr="optionalFeatures: passthrough, periods-of-track-hand; referenceSpaceType: local">
 <a-sky color="#000000" material="transparent: true; opacity: 0"></a-sky>
 
-<a-entity id="monitor-group" position="0 1.5 -0.8" class="clickable" gesture-detector>
+<a-entity id="monitor-group" position="0 1.5 -1.0" class="clickable" grabbable-scalable>
 <a-video src="#videoSource" width="1.6" height="0.9" position="-0.01 0 0" clip="0 0 0.5 1"></a-video>
 <a-video src="#videoSource" width="1.6" height="0.9" position="0.01 0 0" clip="0.5 0 1 1"></a-video>
 
-<a-box width="1.7" height="1.0" depth="0.1" material="visible: false" class="raycast-target"></a-box>
+<a-box width="1.7" height="1.0" depth="0.1" material="color: #ffffff; opacity: 0.1; transparent: true" class="raycast-target"></a-box>
 </a-entity>
 
 <a-entity hand-tracking-controls="hand: left"></a-entity>
-<a-entity hand-tracking-controls="hand: right" raycaster="objects: .raycast-target; showLine: true; far: 2" cursor="rayOrigin: mouse"></a-entity>
+<a-entity hand-tracking-controls="hand: right"></a-entity>
+
+<a-entity oculus-touch-controls="hand: left"></a-entity>
+<a-entity oculus-touch-controls="hand: right" laser-controls="hand: right" raycaster="objects: .raycast-target"></a-entity>
+
 </a-scene>
 
 <script>
+// カメラ起動
 async function startCamera() {
 const video = document.getElementById('videoSource');
 try {
@@ -49,23 +54,34 @@ mesh.material.map.offset.set(this.data.x, 0);
 }
 });
 
-// ハンドジェスチャー操作（移動・拡大）の実装
-AFRAME.registerComponent('gesture-detector', {
+// ハイブリッド操作ロジック
+AFRAME.registerComponent('grabbable-scalable', {
 init: function () {
-this.internalScale = 1.0;
+this.scale = 1.0;
 this.el.addEventListener('mousedown', (e) => {
 this.isGrabbing = true;
-this.hand = e.detail.cursorEl;
+this.activeInput = e.detail.cursorEl;
 });
 window.addEventListener('mouseup', () => { this.isGrabbing = false; });
+
+// コントローラのスティックによる拡大縮小
+window.addEventListener('axismove', (e) => {
+const stickY = e.detail.axis[3] || e.detail.axis[1];
+if (Math.abs(stickY) > 0.1) {
+this.scale -= stickY * 0.03;
+this.scale = Math.max(0.3, Math.min(4, this.scale));
+this.el.setAttribute('scale', `${this.scale} ${this.scale} ${this.scale}`);
+}
+});
 },
 tick: function () {
-if (this.isGrabbing && this.hand) {
-// 1. 移動：手の位置に追従
-const handPos = this.hand.object3D.position;
-this.el.object3D.position.lerp(handPos, 0.1);
-
-// 2. 向き：常に自分のほうを向くように調整（必要に応じて）
+if (this.isGrabbing && this.activeInput) {
+const targetObj = this.activeInput.object3D;
+// 手またはコントローラの少し前方（40cm）に位置を合わせる
+const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(targetObj.quaternion);
+const newPos = targetObj.position.clone().add(direction.multiplyScalar(0.4));
+this.el.object3D.position.lerp(newPos, 0.1);
+this.el.object3D.quaternion.slerp(targetObj.quaternion, 0.1);
 }
 }
 });
