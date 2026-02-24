@@ -1,69 +1,92 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>USB Capture Force Search</title>
+    <title>Quest 3 USB Debug</title>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
 <body style="background: #111; color: #0f0; font-family: monospace; padding: 20px;">
-    <h3>USBデバイス強制認識モード</h3>
-    <div id="status">準備中...</div>
-    <div id="btnArea"></div>
-    <video id="v" autoplay playsinline style="width: 100%; border: 1px solid #555;"></video>
+    <h2>[Quest 3 USB Debugger]</h2>
+    
+    <div id="status" style="border: 1px solid #0f0; padding: 10px; margin-bottom: 10px;">
+        初期化中...
+    </div>
+
+    <div id="deviceList"></div>
+    <video id="v" autoplay playsinline style="width: 100%; max-width: 600px; border: 1px solid #555; margin-top: 10px;"></video>
 
     <script>
         const status = document.getElementById('status');
-        const btnArea = document.getElementById('btnArea');
+        const list = document.getElementById('deviceList');
         const video = document.getElementById('v');
 
-        async function forceDiscover() {
+        async function start() {
+            status.innerText = "1. HTTPS確認: OK\n2. カメラ権限をリクエスト中...";
+            
             try {
-                status.innerText = "1. 初期権限を取得中...";
-                // 最初に一度カメラを動かさないと、ブラウザは他のデバイスを認識しません
-                const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                // まずは権限をもらう（これが通らないとデバイス名が取得できない）
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                status.innerText = "3. 権限取得成功！デバイスをスキャンしています...";
                 
-                status.innerText = "2. 全デバイスを再スキャン中...";
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                
-                // ビデオ入力だけを抽出
-                const videoDevices = devices.filter(d => d.kind === 'videoinput');
-                
-                status.innerText = `見つかった数: ${videoDevices.length}個\n(HDMI Linkを完全に終了してから試してください)`;
+                // ストリームを止める（スキャン用）
+                stream.getTracks().forEach(track => track.stop());
 
-                btnArea.innerHTML = "";
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+                if (videoDevices.length === 0) {
+                    status.innerText = "エラー: ビデオ入力デバイスが見つかりません。\nUSBキャプチャカードが認識されていない可能性があります。";
+                    return;
+                }
+
+                list.innerHTML = "<h3>デバイス一覧 (クリックして再生):</h3>";
                 videoDevices.forEach((d, i) => {
                     const btn = document.createElement('button');
-                    btn.style = "display:block; width:100%; padding:20px; margin:10px 0; background:#333; color:#fff; border:1px solid #0f0;";
-                    // ラベルが空の場合は「Device [i]」と表示
-                    btn.innerText = `[${i}] ${d.label || 'USB Video / External Camera'}`;
+                    btn.style = "display:block; width:100%; padding:15px; margin:5px 0; background:#333; color:#fff; border:1px solid #0f0; text-align:left;";
+                    btn.innerText = `[${i}] ${d.label || '名称不明 (再読み込みしてください)'}`;
                     
                     btn.onclick = async () => {
-                        // 既存のストリームを停止
-                        if(video.srcObject) {
-                            video.srcObject.getTracks().forEach(t => t.stop());
-                        }
-                        
+                        status.innerText = `デバイス ${i} を起動中...`;
+                        const constraints = { video: { deviceId: { exact: d.deviceId }, width: 1920, height: 1080 } };
                         try {
-                            const s = await navigator.mediaDevices.getUserMedia({
-                                video: { deviceId: { exact: d.deviceId } }
-                            });
+                            const s = await navigator.mediaDevices.getUserMedia(constraints);
                             video.srcObject = s;
                             status.innerText = `再生中: ${d.label}`;
                         } catch(e) {
-                            status.innerText = "エラー: " + e.message;
+                            status.innerText = `起動エラー: ${e.name}\n${e.message}`;
                         }
                     };
-                    btnArea.appendChild(btn);
+                    list.appendChild(btn);
                 });
 
-                // 一時的なストリームを止める
-                tempStream.getTracks().forEach(t => t.stop());
-
             } catch (err) {
-                status.innerText = "失敗: " + err.message;
+                status.style.color = "red";
+                status.innerText = `【権限エラー】\n種類: ${err.name}\n内容: ${err.message}\n\n※ブラウザのアドレスバー横のアイコンから『カメラ設定』をリセットしてみてください。`;
             }
         }
 
-        forceDiscover();
+        start(// デバイス一覧からキャプチャカードを探して自動起動するロジック
+const devices = await navigator.mediaDevices.enumerateDevices();
+const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+// 「USB」や「Capture」という名前が入っているデバイスを優先的に探す
+const captureCard = videoDevices.find(d => 
+    d.label.includes('USB') || 
+    d.label.includes('Video') || 
+    d.label.includes('Capture')
+);
+
+const targetDevice = captureCard || videoDevices[videoDevices.length - 1]; // 見つからなければ最後の方を選択
+
+if (targetDevice) {
+    const constraints = { 
+        video: { deviceId: { exact: targetDevice.deviceId }, width: 1920, height: 1080 } 
+    };
+    const s = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = s;
+}
+
+            ); 
     </script>
 </body>
 </html>
