@@ -1,61 +1,71 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>USB Capture Debug</title>
+    <title>Quest 3 USB Debug</title>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 </head>
-<body style="background: #222; color: white; font-family: sans-serif; text-align: center;">
-    <h2>USBデバイス確認ツール</h2>
+<body style="background: #111; color: #0f0; font-family: monospace; padding: 20px;">
+    <h2>[Quest 3 USB Debugger]</h2>
     
-    <div id="deviceList" style="margin-bottom: 20px; border: 1px solid #555; padding: 10px;">
-        デバイスを探しています...
+    <div id="status" style="border: 1px solid #0f0; padding: 10px; margin-bottom: 10px;">
+        初期化中...
     </div>
 
-    <video id="debugVideo" autoplay playsinline style="width: 80%; border: 2px solid white;"></video>
-    
-    <p>現在のデバイスID: <br><span id="currentId" style="font-size: 12px; color: #aaa;">未選択</span></p>
+    <div id="deviceList"></div>
+    <video id="v" autoplay playsinline style="width: 100%; max-width: 600px; border: 1px solid #555; margin-top: 10px;"></video>
 
     <script>
-        async function initDebug() {
-            const listElement = document.getElementById('deviceList');
-            const video = document.getElementById('debugVideo');
-            const idDisplay = document.getElementById('currentId');
+        const status = document.getElementById('status');
+        const list = document.getElementById('deviceList');
+        const video = document.getElementById('v');
 
+        async function start() {
+            status.innerText = "1. HTTPS確認: OK\n2. カメラ権限をリクエスト中...";
+            
             try {
-                // 最初に一度権限をリクエストしないとデバイス名が取得できません
-                await navigator.mediaDevices.getUserMedia({ video: true });
-
-                // デバイス一覧を取得
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const videoDevices = devices.filter(device => device.kind === 'videoinput');
-
-                listElement.innerHTML = "<h3>見つかったデバイス:</h3>";
+                // まずは権限をもらう（これが通らないとデバイス名が取得できない）
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                status.innerText = "3. 権限取得成功！デバイスをスキャンしています...";
                 
-                videoDevices.forEach((device, index) => {
+                // ストリームを止める（スキャン用）
+                stream.getTracks().forEach(track => track.stop());
+
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+                if (videoDevices.length === 0) {
+                    status.innerText = "エラー: ビデオ入力デバイスが見つかりません。\nUSBキャプチャカードが認識されていない可能性があります。";
+                    return;
+                }
+
+                list.innerHTML = "<h3>デバイス一覧 (クリックして再生):</h3>";
+                videoDevices.forEach((d, i) => {
                     const btn = document.createElement('button');
-                    btn.innerHTML = `${index}: ${device.label || '不明なデバイス'}`;
-                    btn.style.margin = "5px";
-                    btn.style.padding = "10px";
+                    btn.style = "display:block; width:100%; padding:15px; margin:5px 0; background:#333; color:#fff; border:1px solid #0f0; text-align:left;";
+                    btn.innerText = `[${i}] ${d.label || '名称不明 (再読み込みしてください)'}`;
                     
                     btn.onclick = async () => {
-                        // 選択したデバイスで映像を開始
-                        const constraints = {
-                            video: { deviceId: { exact: device.deviceId } }
-                        };
-                        const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                        video.srcObject = stream;
-                        idDisplay.innerText = device.deviceId;
+                        status.innerText = `デバイス ${i} を起動中...`;
+                        const constraints = { video: { deviceId: { exact: d.deviceId }, width: 1920, height: 1080 } };
+                        try {
+                            const s = await navigator.mediaDevices.getUserMedia(constraints);
+                            video.srcObject = s;
+                            status.innerText = `再生中: ${d.label}`;
+                        } catch(e) {
+                            status.innerText = `起動エラー: ${e.name}\n${e.message}`;
+                        }
                     };
-                    
-                    listElement.appendChild(btn);
+                    list.appendChild(btn);
                 });
 
             } catch (err) {
-                listElement.innerHTML = "エラー: " + err.message + "<br>HTTPSで接続しているか確認してください。";
+                status.style.color = "red";
+                status.innerText = `【権限エラー】\n種類: ${err.name}\n内容: ${err.message}\n\n※ブラウザのアドレスバー横のアイコンから『カメラ設定』をリセットしてみてください。`;
             }
         }
 
-        initDebug();
+        start();
     </script>
 </body>
 </html>
